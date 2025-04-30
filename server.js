@@ -1,15 +1,18 @@
-
+// server.js
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
 const admin = require('firebase-admin');
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ use env var
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+// 🔐 Load Firebase credentials from base64 env var
+const serviceAccount = JSON.parse(
+  Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+);
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
 const app = express();
@@ -18,6 +21,7 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Utility to create payment intent
 const createPaymentIntent = async (amount, currency = 'gbp', metadata = {}) => {
   return await stripe.paymentIntents.create({
     amount,
@@ -26,6 +30,7 @@ const createPaymentIntent = async (amount, currency = 'gbp', metadata = {}) => {
   });
 };
 
+// 🔹 Route for CardElement-based checkout
 app.post('/api/create-payment-intent', async (req, res) => {
   try {
     const { amount, metadata } = req.body;
@@ -41,9 +46,11 @@ app.post('/api/create-payment-intent', async (req, res) => {
   }
 });
 
+// 🔹 Route for Stripe Checkout redirect
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const { amount } = req.body;
+    console.log('🧾 Creating checkout session with amount (pence):', amount);
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Invalid amount' });
@@ -68,9 +75,10 @@ app.post('/create-checkout-session', async (req, res) => {
       cancel_url: 'https://coco-bubble-tea.vercel.app/cancel',
     });
 
+    console.log('✅ Stripe session created:', session.url);
     res.json({ url: session.url });
   } catch (error) {
-    console.error('Error in /create-checkout-session:', error.message);
+    console.error('❌ Error in /create-checkout-session:', error.message);
     res.status(500).json({ error: error.message || 'Failed to create checkout session' });
   }
 });
