@@ -7,13 +7,24 @@ const admin = require('firebase-admin');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ use env var
 
 // 🔐 Load Firebase credentials from base64 env var
-const serviceAccount = JSON.parse(
-  Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
-);
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+  try {
+    serviceAccount = JSON.parse(
+      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+    );
+  } catch (err) {
+    console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_BASE64:', err);
+  }
+} else {
+  console.error('❌ FIREBASE_SERVICE_ACCOUNT_BASE64 not defined');
+}
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (serviceAccount) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
 const app = express();
 const port = process.env.PORT || 3001;
