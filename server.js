@@ -3,21 +3,36 @@ const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
 const admin = require('firebase-admin');
-const path = require('path');
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ secure via env
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ use env var
 
-// 🔐 Load Firebase service account from a mounted secret file
-const serviceAccount = require(path.join(__dirname, 'serviceAccountKey.json'));
+// 🔐 Load Firebase credentials from base64 env var
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+  try {
+    serviceAccount = JSON.parse(
+      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+    );
+  } catch (err) {
+    console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_BASE64:', err);
+  }
+} else {
+  console.error('❌ FIREBASE_SERVICE_ACCOUNT_BASE64 not defined');
+}
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (serviceAccount) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({
+  origin: 'https://coco-bubble-tea.vercel.app',
+  methods: ['POST'],
+}));
 app.use(express.json());
 
 // Utility to create payment intent
