@@ -29,10 +29,23 @@ if (serviceAccount) {
 const app = express();
 const port = process.env.PORT || 3001;
 
+// ✅ Allow both local and Vercel frontend
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://coco-bubble-tea.vercel.app'
+];
+
 app.use(cors({
-  origin: 'https://coco-bubble-tea.vercel.app',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['POST'],
 }));
+
 app.use(express.json());
 
 // Utility to create payment intent
@@ -70,6 +83,8 @@ app.post('/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
+    const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -85,8 +100,8 @@ app.post('/create-checkout-session', async (req, res) => {
         },
       ],
       mode: 'payment',
-      success_url: 'https://coco-bubble-tea.vercel.app/success',
-      cancel_url: 'https://coco-bubble-tea.vercel.app/cancel',
+      success_url: `${frontendBaseUrl}/success`,
+      cancel_url: `${frontendBaseUrl}/cancel`,
     });
 
     console.log('✅ Stripe session created:', session.url);
