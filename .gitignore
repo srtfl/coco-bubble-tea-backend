@@ -8,6 +8,7 @@ yarn.lock
 # Sensitive files
 serviceAccountKey.json
 .env
+.env.local
 *.pem  # Private key files
 *.key  # API keys or other sensitive keys
 
