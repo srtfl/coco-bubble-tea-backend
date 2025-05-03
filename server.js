@@ -1,11 +1,13 @@
+require('dotenv').config(); // Load environment variables from .env for local development
+
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
 const admin = require('firebase-admin');
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ use env var
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
-// 🔐 Load Firebase credentials
+// Load Firebase credentials
 let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
   try {
@@ -34,12 +36,12 @@ admin.initializeApp({
 });
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3001; // Render will set PORT dynamically
 
-// ✅ Allow both local and Vercel frontend
+// Allow both local and Vercel frontend
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://coco-bubble-tea.vercel.app'
+  'https://coco-bubble-tea.vercel.app',
 ];
 
 app.use(cors({
@@ -50,8 +52,12 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['POST'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Handle preflight OPTIONS requests
+app.options('*', cors());
 
 app.use(express.json());
 
@@ -61,11 +67,10 @@ const createPaymentIntent = async (amount, currency = 'gbp', metadata = {}) => {
     amount,
     currency,
     metadata,
-    // Removed success_url and cancel_url to let frontend handle navigation
   });
 };
 
-// 🔹 Route for CardElement-based checkout
+// Route for CardElement-based checkout
 app.post('/api/create-payment-intent', async (req, res) => {
   try {
     const { amount, metadata } = req.body;
@@ -73,7 +78,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    const paymentIntent = await createPaymentIntent(amount * 100, 'gbp', metadata); // Convert to cents
+    const paymentIntent = await createPaymentIntent(amount * 100, 'gbp', metadata);
     res.json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
     console.error('Error in /api/create-payment-intent:', error.message);
@@ -81,39 +86,45 @@ app.post('/api/create-payment-intent', async (req, res) => {
   }
 });
 
-// 🔹 Route for Stripe Checkout redirect (optional, update success_url)
+// Route for Stripe Checkout redirect
 app.post('/create-checkout-session', async (req, res) => {
   try {
-    const { amount } = req.body;
-    console.log('🧾 Creating checkout session with amount (pence):', amount);
+    const { cartItems, totalAmount } = req.body;
+    console.log('🧾 Creating checkout session with totalAmount (pounds):', totalAmount);
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
+    if (!cartItems || cartItems.length === 0 || !totalAmount || totalAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid cartItems or totalAmount' });
     }
 
     const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+    const lineItems = cartItems.map(item => ({
+      price_data: {
+        currency: 'gbp',
+        product_data: {
+          name: item.name,
+          metadata: {
+            size: item.size,
+          },
+        },
+        unit_amount: Math.round(item.price * 100), // Convert price to pence
+      },
+      quantity: item.quantity,
+    }));
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'gbp',
-            product_data: {
-              name: 'Coco Bubble Tea Order',
-            },
-            unit_amount: amount, // Already in pence
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       mode: 'payment',
-      success_url: `${frontendBaseUrl}/order-confirmation`, // Changed to /order-confirmation
-      cancel_url: `${frontendBaseUrl}/`, // Changed to root for simplicity
+      success_url: `${frontendBaseUrl}/order-confirmation`,
+      cancel_url: `${frontendBaseUrl}/order-online`,
+      metadata: {
+        cartItems: JSON.stringify(cartItems),
+      },
     });
 
-    console.log('✅ Stripe session created:', session.url);
-    res.json({ url: session.url });
+    console.log('✅ Stripe session created:', session.id);
+    res.json({ id: session.id });
   } catch (error) {
     console.error('❌ Error in /create-checkout-session:', error.message);
     res.status(500).json({ error: error.message || 'Failed to create checkout session' });
