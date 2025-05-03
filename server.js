@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
@@ -6,25 +5,33 @@ const admin = require('firebase-admin');
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY); // ✅ use env var
 
-// 🔐 Load Firebase credentials from base64 env var
+// 🔐 Load Firebase credentials
 let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
   try {
     serviceAccount = JSON.parse(
       Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
     );
+    console.log('✅ Loaded Firebase credentials from FIREBASE_SERVICE_ACCOUNT_BASE64');
   } catch (err) {
     console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_BASE64:', err);
+    process.exit(1);
   }
 } else {
-  console.error('❌ FIREBASE_SERVICE_ACCOUNT_BASE64 not defined');
+  try {
+    serviceAccount = require('./serviceAccountKey.json');
+    console.log('✅ Loaded Firebase credentials from serviceAccountKey.json');
+  } catch (err) {
+    console.error('❌ Failed to load serviceAccountKey.json:', err);
+    console.error('Please ensure serviceAccountKey.json exists for local development.');
+    process.exit(1);
+  }
 }
 
-if (serviceAccount) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
+// Initialize Firebase Admin SDK
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -54,6 +61,7 @@ const createPaymentIntent = async (amount, currency = 'gbp', metadata = {}) => {
     amount,
     currency,
     metadata,
+    // Removed success_url and cancel_url to let frontend handle navigation
   });
 };
 
@@ -65,7 +73,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    const paymentIntent = await createPaymentIntent(amount, 'gbp', metadata);
+    const paymentIntent = await createPaymentIntent(amount * 100, 'gbp', metadata); // Convert to cents
     res.json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
     console.error('Error in /api/create-payment-intent:', error.message);
@@ -73,7 +81,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
   }
 });
 
-// 🔹 Route for Stripe Checkout redirect
+// 🔹 Route for Stripe Checkout redirect (optional, update success_url)
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const { amount } = req.body;
@@ -94,14 +102,14 @@ app.post('/create-checkout-session', async (req, res) => {
             product_data: {
               name: 'Coco Bubble Tea Order',
             },
-            unit_amount: amount,
+            unit_amount: amount, // Already in pence
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      success_url: `${frontendBaseUrl}/success`,
-      cancel_url: `${frontendBaseUrl}/cancel`,
+      success_url: `${frontendBaseUrl}/order-confirmation`, // Changed to /order-confirmation
+      cancel_url: `${frontendBaseUrl}/`, // Changed to root for simplicity
     });
 
     console.log('✅ Stripe session created:', session.url);

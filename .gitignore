@@ -1,0 +1,64 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+# package-lock.json  # Uncomment this line if you want to ignore package-lock.json
+
+# Sensitive files
+serviceAccountKey.json
+.env
+*.pem  # Private key files
+*.key  # API keys or other sensitive keys
+
+# Build output
+dist/
+build/
+public/build/  # React build output
+out/  # Next.js or other build outputs
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like Istanbul
+coverage/
+
+# Dependency directories (if any custom ones exist)
+node_modules_bin/  # Covers binaries like acorn.cmd, compileProtos.cmd, etc.
+
+# Firebase specific
+firebase-debug.log
+firebase.json  # Only ignore if you manage it separately or it's auto-generated
+
+# Miscellaneous
+*.bak
+*.tmp
+*.cache
+
+# Local configuration files (if any)
+config/local.json
+config/development.json
+
+# Test-related
+test/reports/
+test/coverage/
