@@ -39,24 +39,15 @@ const db = admin.firestore();
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Add rate limiter here
-const rateLimit = require('express-rate-limit');
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
-
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://coco-bubble-tea.vercel.app',          // prod
-  /^https:\/\/coco-bubble-[\w-]+\.vercel\.app$/,  // all previews
+  'https://coco-bubble-tea.vercel.app',
+  /^https:\/\/coco-bubble-[\w-]+\.vercel\.app$/,
   'https://coco-bubble-tea-backend.onrender.com',
-  'https://cocostreats.co.uk',                    // <-- add this line
+  'https://cocostreats.co.uk',
 ];
 
+// CORS middleware FIRST!
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -69,12 +60,24 @@ app.use(
         : callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   })
 );
 
-
+// Explicit OPTIONS handler for all routes
 app.options('*', cors());
+
+// Now add rate limiter and body parser
+const rateLimit = require('express-rate-limit');
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
 app.use(express.json({ limit: '10mb' }));
 
 // Test Firestore endpoint
@@ -344,8 +347,8 @@ app.get('/verify-session', async (req, res) => {
       await orderRef.set(newOrder);
       console.log('✅ Order created via verify-session for session:', session_id);
       return res.json(newOrder);
+    } catch (error) {
       console.error('❌ Failed to save order via verify-session:', session_id, error);
-      return res.status(500).json({ error: 'Failed to save order' });
     }
   } catch (error) {
     console.error('❌ Error in /verify-session:', error.message);
