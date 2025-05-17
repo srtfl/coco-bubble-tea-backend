@@ -125,9 +125,27 @@ app.post('/create-checkout-session', async (req, res) => {
     let totalPromoPricePence = 0;
 
     cartItems.forEach(item => {
-      // Find the product for price validation
       const product = products.find(p => p.id === item.id);
       if (!product) throw new Error(`Invalid product ID: ${item.id}`);
+
+      const quantity = parseInt(item.quantity, 10);
+      if (isNaN(quantity) || quantity <= 0) {
+        throw new Error(`Invalid integer: ${item.quantity} for product ID: ${item.id}`);
+      }
+
+      // Use priceReg or priceLrg based on item.size
+      let price;
+      if (item.size === 'reg' || item.size === 'Reg' || item.size === 'REG') {
+        price = Number(product.priceReg);
+      } else if (item.size === 'lrg' || item.size === 'Lrg' || item.size === 'LRG' || item.size === 'large') {
+        price = Number(product.priceLrg);
+      } else {
+        throw new Error(`Unknown size: ${item.size} for product ID: ${item.id}`);
+      }
+
+      if (isNaN(price) || price <= 0) {
+        throw new Error(`Invalid price for size ${item.size}: ${price} for product ID: ${item.id}`);
+      }
 
       // Find matching promotion
       const promo = promotions.find(
@@ -145,11 +163,11 @@ app.post('/create-checkout-session', async (req, res) => {
             items: [],
           };
         }
-        promoGroups[key].totalQuantity += item.quantity;
-        promoGroups[key].items.push({ ...item, pricePence: Math.round(Number(product.price) * 100) }); // price in pence
+        promoGroups[key].totalQuantity += quantity;
+        promoGroups[key].items.push({ ...item, pricePence: Math.round(price * 100) }); // price in pence
       } else {
         // No promo, add to total directly
-        totalPromoPricePence += item.quantity * Math.round(Number(product.price) * 100);
+        totalPromoPricePence += quantity * Math.round(price * 100);
       }
     });
 
