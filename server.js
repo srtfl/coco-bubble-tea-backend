@@ -1,4 +1,3 @@
-
 require('dotenv').config({ path: process.env.NODE_ENV === 'development' ? '.env.local' : '.env' });
 
 const express = require('express');
@@ -39,6 +38,16 @@ const db = admin.firestore();
 
 const app = express();
 const port = process.env.PORT || 3001;
+
+// Add rate limiter here
+const rateLimit = require('express-rate-limit');
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
 
 const allowedOrigins = [
   'http://localhost:3000',
@@ -94,20 +103,89 @@ app.post('/api/create-payment-intent', async (req, res) => {
 // Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
   try {
-    const { cartItems, totalAmount } = req.body;
+    const { cartItems } = req.body;
     const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-    const lineItems = cartItems.map(item => ({
-      price_data: {
-        currency: 'gbp',
-        product_data: {
-          name: item.name,
-          metadata: { size: item.size },
+    // Fetch products and promotions from Firestore
+    const productsSnap = await db.collection('products').get();
+    const promotionsSnap = await db.collection('promotions').get();
+
+    const products = productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const promotions = promotionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(p => p.active || p.Active);
+
+    // Group cart items by promotion key
+    const promoGroups = {};
+    let totalPromoPricePence = 0;
+
+    cartItems.forEach(item => {
+      // Find the product for price validation
+      const product = products.find(p => p.id === item.id);
+      if (!product) throw new Error(`Invalid product ID: ${item.id}`);
+
+      // Find matching promotion
+      const promo = promotions.find(
+        p =>
+          (p.category || p.Category) === (item.category || product.category) &&
+          (p.size || p.Size) === item.size
+      );
+
+      if (promo) {
+        const key = `${item.category || product.category}-${item.size}`;
+        if (!promoGroups[key]) {
+          promoGroups[key] = {
+            promotion: promo,
+            totalQuantity: 0,
+            items: [],
+          };
+        }
+        promoGroups[key].totalQuantity += item.quantity;
+        promoGroups[key].items.push({ ...item, pricePence: Math.round(Number(product.price) * 100) }); // price in pence
+      } else {
+        // No promo, add to total directly
+        totalPromoPricePence += item.quantity * Math.round(Number(product.price) * 100);
+      }
+    });
+
+    // Apply promotion logic
+    Object.values(promoGroups).forEach(group => {
+      const { promotion, totalQuantity, items } = group;
+      const requiredQuantity = Number(promotion.requiredQuantity) || 1;
+      const promoPrice = promotion.size === 'reg' ? promotion.priceReg : promotion.priceLrg;
+      const promoPricePence = Math.round(Number(promoPrice) * 100);
+
+      const qualifyingSets = Math.floor(totalQuantity / requiredQuantity);
+      if (qualifyingSets > 0) {
+        // Discounted sets
+        totalPromoPricePence += qualifyingSets * promoPricePence;
+
+        // Remainder at regular price
+        let remaining = totalQuantity % requiredQuantity;
+        for (const item of items) {
+          if (remaining <= 0) break;
+          const qty = Math.min(item.quantity, remaining);
+          totalPromoPricePence += qty * item.pricePence; // price is already in pence
+          remaining -= qty;
+        }
+      } else {
+        // Not enough for promo, regular price
+        for (const item of items) {
+          totalPromoPricePence += item.quantity * item.pricePence; // price is already in pence
+        }
+      }
+    });
+
+    // Stripe expects price in pence (integer)
+    const lineItems = [
+      {
+        price_data: {
+          currency: 'gbp',
+          product_data: { name: 'Coco Bubble Tea Order' },
+          unit_amount: totalPromoPricePence,
         },
-        unit_amount: Math.round(item.price * 100),
+        quantity: 1,
       },
-      quantity: item.quantity,
-    }));
+    ];
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -117,17 +195,16 @@ app.post('/create-checkout-session', async (req, res) => {
       cancel_url: `${frontendBaseUrl}/cancel`,
       metadata: {
         cartItems: JSON.stringify(cartItems),
-        totalAmount: totalAmount.toString(),
+        // Store the total in pounds for reference (not for Stripe)
+        totalAmount: (totalPromoPricePence / 100).toFixed(2),
       },
     });
 
-    res.json({ url: session.url });
-  } catch (error) {
+res.json({ url: session.url, total: totalPromoPricePence / 100 });  } catch (error) {
     console.error('❌ Error in /create-checkout-session:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
-
 // Stripe Webhook — must use raw body
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   console.log('Webhook received:', req.headers['stripe-signature']);
