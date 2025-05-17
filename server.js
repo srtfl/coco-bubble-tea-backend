@@ -54,6 +54,7 @@ const allowedOrigins = [
   'https://coco-bubble-tea.vercel.app',          // prod
   /^https:\/\/coco-bubble-[\w-]+\.vercel\.app$/,  // all previews
   'https://coco-bubble-tea-backend.onrender.com',
+  'https://cocostreats.co.uk',                    // <-- add this line
 ];
 
 app.use(
@@ -343,7 +344,6 @@ app.get('/verify-session', async (req, res) => {
       await orderRef.set(newOrder);
       console.log('✅ Order created via verify-session for session:', session_id);
       return res.json(newOrder);
-    } catch (error) {
       console.error('❌ Failed to save order via verify-session:', session_id, error);
       return res.status(500).json({ error: 'Failed to save order' });
     }
