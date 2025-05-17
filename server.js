@@ -51,21 +51,27 @@ app.use(limiter);
 
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://coco-bubble-tea.vercel.app',
+  'https://coco-bubble-tea.vercel.app',          // prod
+  /^https:\/\/coco-bubble-[\w-]+\.vercel\.app$/,  // all previews
   'https://coco-bubble-tea-backend.onrender.com',
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // Postman / Stripe webhook
+      const allowed = allowedOrigins.some(o =>
+        typeof o === 'string' ? o === origin : o.test(origin)
+      );
+      return allowed
+        ? callback(null, true)
+        : callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  })
+);
+
 
 app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
